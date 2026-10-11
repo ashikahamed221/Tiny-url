@@ -1,75 +1,287 @@
-import express, { json } from "express";
+import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import mongoose, { mongo } from "mongoose";
+import mongoose from "mongoose";
 import { nanoid } from "nanoid";
-const { Schema } = mongoose;
+import rateLimit from "express-rate-limit";
 
-const app = express();
 dotenv.config();
 
-app.use(express.json())
+const app = express();
+
+app.use(express.json());
+
+const createUrlLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: "Too many URL creation requests. Please try again later.",
+  },
+});
+
+app.use("/api/shorturl", createUrlLimiter);
 app.use(cors());
 
-// connect to mongodb using an connect
+// MongoDB connection
+const MONGODB_URI = process.env.MONGODB_URI;
 
-mongoose.connect(process.env.TINY_MONGODB)
-    .then(() => { console.log("mongo db connected") })
-    .catch((err) => { console.log("mongo db error", err) })
+if (!MONGODB_URI) {
+  throw new Error("MONGODB_URI is missing from .env");
+}
 
+// URL model
+const urlSchema = new mongoose.Schema(
+  {
+    Originalurl: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    ShortId: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    Clickcount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
 
-// Creating an db model
+const Url = mongoose.model("Url", urlSchema);
 
-const Url = mongoose.model('Url', new mongoose.Schema({
-    Originalurl: String,
-    ShortId: String,
-    Clickcount: { type: Number, default: 0 }
-}))
+// Health route must come before the dynamic redirect route
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "OK",
+    message: "Tiny URL API is running",
+  });
+});
 
-
-
-app.post('/api/shorturl', async (req, res) => {
-
+// Create a short URL
+app.post("/api/shorturl", async (req, res) => {
+  try {
     const { Originalurl } = req.body;
 
-    const ShortId = nanoid(6);
+    // Validate input
+    if (
+      typeof Originalurl !== "string" ||
+      !Originalurl.trim()
+    ) {
+      return res.status(400).json({
+        message: "Please provide a valid URL",
+      });
+    }
 
-    await Url.create({ Originalurl, ShortId })
-    res.json({ Shorturl: `http://localhost:4000/${ShortId}`})
+    const trimmedUrl = Originalurl.trim();
 
-})
-
-app.get('/:ShortId', async (req, res) => {
+    // Validate URL format and protocol
+    let parsedUrl;
 
     try {
-
-        const found = await Url.findOne({ ShortId: req.params.ShortId })
-
-        if (!found) return res.status(404).send("Not Found");
-
-        found.Clickcount++;
-
-        await found.save();
-
-        return res.redirect(found.Originalurl);
+      parsedUrl = new URL(trimmedUrl);
+    } catch {
+      return res.status(400).json({
+        message: "Invalid URL format",
+      });
     }
-    catch (error) {
 
-        console.log("error in the link")
-
+    if (
+      !["http:", "https:"].includes(parsedUrl.protocol)
+    ) {
+      return res.status(400).json({
+        message: "Only HTTP and HTTPS URLs are allowed",
+      });
     }
-})
+
+    // Generate a unique short ID
+    let shortId;
+    let savedUrl;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      shortId = nanoid(6);
+
+      try {
+        savedUrl = await Url.create({
+          Originalurl: parsedUrl.toString(),
+          ShortId: shortId,
+        });
+
+        break;
+      } catch (error) {
+        // Retry only if the short ID already exists
+        if (error.code !== 11000) {
+          throw error;
+        }
+      }
+    }
+
+    if (!savedUrl) {
+      return res.status(500).json({
+        message: "Could not generate a unique short ID",
+      });
+    }
+
+    return res.status(201).json({
+      Shorturl: `http://localhost:4000/${savedUrl.ShortId}`,
+    });
+  } catch (error) {
+    console.error("Error creating short URL:", error);
+
+    return res.status(500).json({
+      message: "Failed to create short URL",
+    });
+  }
+});
+
+// short urls
 
 
-app.get('/health', (req, res) => {
 
-    res.send('hello world!!...')
-})
+app.get("/api/shorturls", async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(
+      50,
+      Math.max(1, parseInt(req.query.limit, 10) || 10)
+    );
 
-const port = 4000;
-app.listen(port, () => {
-    console.log("Server is running on https://localhost:4000")
-})
+    const skip = (page - 1) * limit;
+
+    const [urls, totalUrls] = await Promise.all([
+      Url.find()
+        .select("Originalurl ShortId Clickcount createdAt")
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit),
+      Url.countDocuments(),
+    ]);
+
+    return res.status(200).json({
+      urls,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalUrls / limit),
+        totalUrls,
+        limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching URLs:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch URLs",
+    });
+  }
+});
+
+
+//delete URL
+
+
+app.delete("/api/shorturl/:ShortId", async (req, res) => {
+  try {
+    const { ShortId } = req.params;
+
+    const deletedUrl = await Url.findOneAndDelete({ ShortId });
+
+    if (!deletedUrl) {
+      return res.status(404).json({
+        message: "Short URL not found",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Short URL deleted successfully",
+      deletedShortId: deletedUrl.ShortId,
+    });
+  } catch (error) {
+    console.error("Error deleting short URL:", error);
+
+    return res.status(500).json({
+      message: "Failed to delete short URL",
+    });
+  }
+});
 
 
 
+// Redirect and atomically increment click count
+app.get("/:ShortId", async (req, res) => {
+  try {
+    const found = await Url.findOneAndUpdate(
+      { ShortId: req.params.ShortId },
+      { $inc: { Clickcount: 1 } },
+      { new: true }
+    );
+
+    if (!found) {
+      return res.status(404).send("Short URL not found");
+    }
+
+    return res.redirect(found.Originalurl);
+  } catch (error) {
+    console.error("Error redirecting URL:", error);
+
+    return res.status(500).send("Internal server error");
+  }
+});
+
+// get stats
+
+app.get("/api/shorturl/:ShortId/stats", async (req, res) => {
+  try {
+    const { ShortId } = req.params;
+
+    const url = await Url.findOne({ ShortId }).select(
+      "Originalurl ShortId Clickcount createdAt"
+    );
+
+    if (!url) {
+      return res.status(404).json({
+        message: "Short URL not found",
+      });
+    }
+
+    return res.status(200).json({
+      Originalurl: url.Originalurl,
+      ShortId: url.ShortId,
+      Clickcount: url.Clickcount,
+      CreatedAt: url.createdAt,
+    });
+  } catch (error) {
+    console.error("Error fetching URL statistics:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch URL statistics",
+    });
+  }
+});
+
+
+// Start server only after MongoDB connects
+const startServer = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI);
+
+    console.log("MongoDB connected successfully");
+
+    const port = process.env.PORT || 4000;
+
+    app.listen(port, () => {
+      console.log(`Server is running on http://localhost:${port}`);
+    });
+  } catch (error) {
+    console.error("MongoDB connection failed:", error.message);
+    process.exit(1);
+  }
+};
+
+startServer();
