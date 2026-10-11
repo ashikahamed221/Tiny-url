@@ -234,6 +234,46 @@ app.get("/:ShortId", async (req, res) => {
   }
 });
 
+// stat card
+
+
+app.get("/api/shorturls/stats", async (req, res) => {
+  try {
+    const [totalUrls, result] = await Promise.all([
+      Url.countDocuments(),
+      Url.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalClicks: { $sum: "$Clickcount" },
+            averageClicks: { $avg: "$Clickcount" },
+          },
+        },
+      ]),
+    ]);
+
+    const stats = result[0] || {
+      totalClicks: 0,
+      averageClicks: 0,
+    };
+
+    return res.status(200).json({
+      totalUrls,
+      totalClicks: stats.totalClicks,
+      averageClicks: Number(
+        stats.averageClicks.toFixed(1)
+      ),
+    });
+  } catch (error) {
+    console.error("Error fetching URL statistics:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch URL statistics",
+    });
+  }
+});
+
+
 // get stats
 
 app.get("/api/shorturl/:ShortId/stats", async (req, res) => {
@@ -264,6 +304,9 @@ app.get("/api/shorturl/:ShortId/stats", async (req, res) => {
     });
   }
 });
+
+
+
 
 
 // Start server only after MongoDB connects
