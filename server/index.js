@@ -1,30 +1,451 @@
+// import express from "express";
+// import dotenv from "dotenv";
+// import cors from "cors";
+// import mongoose from "mongoose";
+// import { nanoid } from "nanoid";
+// import rateLimit from "express-rate-limit";
+
+// dotenv.config();
+
+// const app = express();
+
+// app.use(express.json());
+
+// const allowedOrigins = new Set(
+//   ["http://localhost:5173", process.env.CLIENT_URL?.trim()]
+//     .filter(Boolean)
+//     .map((origin) => origin.replace(/\/+$/, "")),
+// );
+
+// const corsOptions = {
+//   origin(origin, callback) {
+//     callback(null, Boolean(origin && allowedOrigins.has(origin)));
+//   },
+// };
+
+// app.use(cors(corsOptions));
+// app.options(/.*/, (req, res) => res.sendStatus(204));
+
+// const createUrlLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   limit: 20,
+//   standardHeaders: true,
+//   legacyHeaders: false,
+//   message: {
+//     message: "Too many URL creation requests. Please try again later.",
+//   },
+// });
+
+// app.use("/api/shorturl", createUrlLimiter);
+
+// const MONGODB_URI = process.env.MONGODB_URI;
+
+// let cached = globalThis.__tinyUrlMongoose;
+
+// if (!cached) {
+//   cached = globalThis.__tinyUrlMongoose = {
+//     conn: null,
+//     promise: null,
+//   };
+// }
+
+// async function connectDB() {
+//   if (mongoose.connection.readyState === 1) {
+//     cached.conn = mongoose.connection;
+//     return cached.conn;
+//   }
+
+//   if (!MONGODB_URI) {
+//     throw new Error("MONGODB_URI is not configured");
+//   }
+
+//   if (!cached.promise) {
+//     cached.promise = mongoose
+//       .connect(MONGODB_URI, { serverSelectionTimeoutMS: 10000 })
+//       .then(() => {
+//         cached.conn = mongoose.connection;
+//         cached.promise = null;
+//         return cached.conn;
+//       })
+//       .catch((error) => {
+//         cached.promise = null;
+//         throw error;
+//       });
+//   }
+
+//   return cached.promise;
+// }
+
+// function getBackendUrl() {
+//   const configuredUrl = process.env.BACKEND_URL?.trim();
+
+//   if (configuredUrl) {
+//     const parsedUrl = new URL(configuredUrl);
+
+//     if (process.env.NODE_ENV === "production" && parsedUrl.protocol !== "https:") {
+//       throw new Error("BACKEND_URL must use HTTPS in production");
+//     }
+
+//     return parsedUrl.origin;
+//   }
+
+//   if (process.env.NODE_ENV !== "production") {
+//     return "http://localhost:4000";
+//   }
+
+//   if (process.env.VERCEL_URL) {
+//     return `https://${process.env.VERCEL_URL}`;
+//   }
+
+//   throw new Error("BACKEND_URL is required in production");
+// }
+
+// function logDatabaseError(error) {
+//   const message = String(error?.message || "Unknown database error")
+//     .replace(/mongodb(?:\+srv)?:\/\/[^\s]+/gi, "[redacted MongoDB URI]")
+//     .replace(MONGODB_URI || "\0", "[redacted MongoDB URI]");
+
+//   console.error("MongoDB connection failed", {
+//     name: error?.name || "Error",
+//     code: error?.code,
+//     message,
+//   });
+// }
+
+// // URL model
+// const urlSchema = new mongoose.Schema(
+//   {
+//     Originalurl: {
+//       type: String,
+//       required: true,
+//       trim: true,
+//     },
+//     ShortId: {
+//       type: String,
+//       required: true,
+//       unique: true,
+//     },
+//     Clickcount: {
+//       type: Number,
+//       default: 0,
+//       min: 0,
+//     },
+//   },
+//   {
+//     timestamps: true,
+//   }
+// );
+
+// const Url = mongoose.model("Url", urlSchema);
+
+// // Health route must come before the dynamic redirect route
+// app.get("/health", (req, res) => {
+//   res.status(200).json({
+//     status: "OK",
+//     message: "Tiny URL API is running",
+//     database: mongoose.connection.readyState === 1 ? "connected" : "not connected",
+//   });
+// });
+
+// app.use(async (req, res, next) => {
+//   try {
+//     await connectDB();
+//     next();
+//   } catch (error) {
+//     logDatabaseError(error);
+//     res.status(503).json({
+//       message: "Database unavailable",
+//     });
+//   }
+// });
+
+// // Create a short URL
+// app.post("/api/shorturl", async (req, res) => {
+//   try {
+//     const { Originalurl } = req.body;
+
+//     // Validate input
+//     if (
+//       typeof Originalurl !== "string" ||
+//       !Originalurl.trim()
+//     ) {
+//       return res.status(400).json({
+//         message: "Please provide a valid URL",
+//       });
+//     }
+
+//     const trimmedUrl = Originalurl.trim();
+
+//     // Validate URL format and protocol
+//     let parsedUrl;
+
+//     try {
+//       parsedUrl = new URL(trimmedUrl);
+//     } catch {
+//       return res.status(400).json({
+//         message: "Invalid URL format",
+//       });
+//     }
+
+//     if (
+//       !["http:", "https:"].includes(parsedUrl.protocol)
+//     ) {
+//       return res.status(400).json({
+//         message: "Only HTTP and HTTPS URLs are allowed",
+//       });
+//     }
+
+//     const backendUrl = getBackendUrl();
+
+//     // Generate a unique short ID
+//     let shortId;
+//     let savedUrl;
+
+//     for (let attempt = 0; attempt < 3; attempt++) {
+//       shortId = nanoid(6);
+
+//       try {
+//         savedUrl = await Url.create({
+//           Originalurl: parsedUrl.toString(),
+//           ShortId: shortId,
+//         });
+
+//         break;
+//       } catch (error) {
+//         // Retry only if the short ID already exists
+//         if (error.code !== 11000) {
+//           throw error;
+//         }
+//       }
+//     }
+
+//     if (!savedUrl) {
+//       return res.status(500).json({
+//         message: "Could not generate a unique short ID",
+//       });
+//     }
+
+//     return res.status(201).json({
+//       Shorturl: `${backendUrl}/${savedUrl.ShortId}`,
+//     });
+//   } catch (error) {
+//     console.error("Error creating short URL:", error);
+
+//     return res.status(500).json({
+//       message: "Failed to create short URL",
+//     });
+//   }
+// });
+
+// // short urls
+
+
+
+// app.get("/api/shorturls", async (req, res) => {
+//   try {
+//     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+//     const limit = Math.min(
+//       50,
+//       Math.max(1, parseInt(req.query.limit, 10) || 10)
+//     );
+
+//     const skip = (page - 1) * limit;
+
+//     const [urls, totalUrls] = await Promise.all([
+//       Url.find()
+//         .select("Originalurl ShortId Clickcount createdAt")
+//         .sort({ createdAt: -1, _id: -1 })
+//         .skip(skip)
+//         .limit(limit),
+//       Url.countDocuments(),
+//     ]);
+
+//     return res.status(200).json({
+//       urls,
+//       pagination: {
+//         currentPage: page,
+//         totalPages: Math.ceil(totalUrls / limit),
+//         totalUrls,
+//         limit,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Error fetching URLs:", error);
+
+//     return res.status(500).json({
+//       message: "Failed to fetch URLs",
+//     });
+//   }
+// });
+
+
+// //delete URL
+
+
+// app.delete("/api/shorturl/:ShortId", async (req, res) => {
+//   try {
+//     const { ShortId } = req.params;
+
+//     const deletedUrl = await Url.findOneAndDelete({ ShortId });
+
+//     if (!deletedUrl) {
+//       return res.status(404).json({
+//         message: "Short URL not found",
+//       });
+//     }
+
+//     return res.status(200).json({
+//       message: "Short URL deleted successfully",
+//       deletedShortId: deletedUrl.ShortId,
+//     });
+//   } catch (error) {
+//     console.error("Error deleting short URL:", error);
+
+//     return res.status(500).json({
+//       message: "Failed to delete short URL",
+//     });
+//   }
+// });
+
+
+
+// // stat card
+
+
+// app.get("/api/shorturls/stats", async (req, res) => {
+//   try {
+//     const [totalUrls, result] = await Promise.all([
+//       Url.countDocuments(),
+//       Url.aggregate([
+//         {
+//           $group: {
+//             _id: null,
+//             totalClicks: { $sum: "$Clickcount" },
+//             averageClicks: { $avg: "$Clickcount" },
+//           },
+//         },
+//       ]),
+//     ]);
+
+//     const stats = result[0] || {
+//       totalClicks: 0,
+//       averageClicks: 0,
+//     };
+
+//     return res.status(200).json({
+//       totalUrls,
+//       totalClicks: stats.totalClicks,
+//       averageClicks: Number(
+//         stats.averageClicks.toFixed(1)
+//       ),
+//     });
+//   } catch (error) {
+//     console.error("Error fetching URL statistics:", error);
+
+//     return res.status(500).json({
+//       message: "Failed to fetch URL statistics",
+//     });
+//   }
+// });
+
+
+// // get stats
+
+// app.get("/api/shorturl/:ShortId/stats", async (req, res) => {
+//   try {
+//     const { ShortId } = req.params;
+
+//     const url = await Url.findOne({ ShortId }).select(
+//       "Originalurl ShortId Clickcount createdAt"
+//     );
+
+//     if (!url) {
+//       return res.status(404).json({
+//         message: "Short URL not found",
+//       });
+//     }
+
+//     return res.status(200).json({
+//       Originalurl: url.Originalurl,
+//       ShortId: url.ShortId,
+//       Clickcount: url.Clickcount,
+//       CreatedAt: url.createdAt,
+//     });
+//   } catch (error) {
+//     console.error("Error fetching URL statistics:", error);
+
+//     return res.status(500).json({
+//       message: "Failed to fetch URL statistics",
+//     });
+//   }
+// });
+
+// // Keep the catch-all redirect after every API route.
+// app.get("/:ShortId", async (req, res) => {
+//   try {
+//     const found = await Url.findOneAndUpdate(
+//       { ShortId: req.params.ShortId },
+//       { $inc: { Clickcount: 1 } },
+//       { new: true },
+//     );
+
+//     if (!found) {
+//       return res.status(404).send("Short URL not found");
+//     }
+
+//     return res.redirect(found.Originalurl);
+//   } catch (error) {
+//     console.error("Error redirecting URL:", error);
+
+//     return res.status(500).send("Internal server error");
+//   }
+// });
+
+// export default app;
+
+
+
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
 import mongoose from "mongoose";
 import { nanoid } from "nanoid";
 import rateLimit from "express-rate-limit";
 
-dotenv.config();
-
 const app = express();
 
-app.use(express.json());
+// Trust Vercel's reverse proxy so rate limiting and IP detection work correctly.
+app.set("trust proxy", 1);
+
+app.use(express.json({ limit: "10kb" }));
+
+// -------------------- CORS --------------------
 
 const allowedOrigins = new Set(
-  ["http://localhost:5173", process.env.CLIENT_URL?.trim()]
+  [
+    "http://localhost:5173",
+    process.env.CLIENT_URL?.trim(),
+  ]
     .filter(Boolean)
-    .map((origin) => origin.replace(/\/+$/, "")),
+    .map((origin) => origin.replace(/\/+$/, ""))
 );
 
 const corsOptions = {
   origin(origin, callback) {
-    callback(null, Boolean(origin && allowedOrigins.has(origin)));
+    // Allow requests without an Origin header (e.g. server-to-server).
+    if (!origin || allowedOrigins.has(origin.replace(/\/+$/, ""))) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("Origin not allowed by CORS"));
   },
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 };
 
 app.use(cors(corsOptions));
-app.options(/.*/, (req, res) => res.sendStatus(204));
+app.options(/.*/, cors(corsOptions));
+
+// -------------------- RATE LIMITING --------------------
 
 const createUrlLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -36,18 +457,20 @@ const createUrlLimiter = rateLimit({
   },
 });
 
-app.use("/api/shorturl", createUrlLimiter);
+// -------------------- MONGODB CONNECTION --------------------
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
-let cached = globalThis.__tinyUrlMongoose;
+const globalForMongoose = globalThis;
 
-if (!cached) {
-  cached = globalThis.__tinyUrlMongoose = {
+if (!globalForMongoose.__tinyUrlMongoose) {
+  globalForMongoose.__tinyUrlMongoose = {
     conn: null,
     promise: null,
   };
 }
+
+const cached = globalForMongoose.__tinyUrlMongoose;
 
 async function connectDB() {
   if (mongoose.connection.readyState === 1) {
@@ -61,10 +484,11 @@ async function connectDB() {
 
   if (!cached.promise) {
     cached.promise = mongoose
-      .connect(MONGODB_URI, { serverSelectionTimeoutMS: 10000 })
+      .connect(MONGODB_URI, {
+        serverSelectionTimeoutMS: 10000,
+      })
       .then(() => {
         cached.conn = mongoose.connection;
-        cached.promise = null;
         return cached.conn;
       })
       .catch((error) => {
@@ -76,13 +500,28 @@ async function connectDB() {
   return cached.promise;
 }
 
+function logDatabaseError(error) {
+  // Do not log the MongoDB URI or database credentials.
+  console.error("MongoDB connection failed", {
+    name: error?.name || "Error",
+    code: error?.code,
+    message:
+      "Check MONGODB_URI, Atlas network access, and database credentials.",
+  });
+}
+
+// -------------------- BACKEND URL --------------------
+
 function getBackendUrl() {
   const configuredUrl = process.env.BACKEND_URL?.trim();
 
   if (configuredUrl) {
     const parsedUrl = new URL(configuredUrl);
 
-    if (process.env.NODE_ENV === "production" && parsedUrl.protocol !== "https:") {
+    if (
+      process.env.NODE_ENV === "production" &&
+      parsedUrl.protocol !== "https:"
+    ) {
       throw new Error("BACKEND_URL must use HTTPS in production");
     }
 
@@ -100,19 +539,8 @@ function getBackendUrl() {
   throw new Error("BACKEND_URL is required in production");
 }
 
-function logDatabaseError(error) {
-  const message = String(error?.message || "Unknown database error")
-    .replace(/mongodb(?:\+srv)?:\/\/[^\s]+/gi, "[redacted MongoDB URI]")
-    .replace(MONGODB_URI || "\0", "[redacted MongoDB URI]");
+// -------------------- URL MODEL --------------------
 
-  console.error("MongoDB connection failed", {
-    name: error?.name || "Error",
-    code: error?.code,
-    message,
-  });
-}
-
-// URL model
 const urlSchema = new mongoose.Schema(
   {
     Originalurl: {
@@ -124,6 +552,7 @@ const urlSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+      index: true,
     },
     Clickcount: {
       type: Number,
@@ -136,100 +565,105 @@ const urlSchema = new mongoose.Schema(
   }
 );
 
-const Url = mongoose.model("Url", urlSchema);
+const Url =
+  mongoose.models.Url || mongoose.model("Url", urlSchema);
 
-// Health route must come before the dynamic redirect route
+// -------------------- HEALTH CHECK --------------------
+
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "OK",
     message: "Tiny URL API is running",
-    database: mongoose.connection.readyState === 1 ? "connected" : "not connected",
+    database:
+      mongoose.connection.readyState === 1
+        ? "connected"
+        : "not connected",
   });
 });
 
+// -------------------- DATABASE MIDDLEWARE --------------------
+
+// Connect before handling any database-dependent route.
 app.use(async (req, res, next) => {
   try {
     await connectDB();
     next();
   } catch (error) {
     logDatabaseError(error);
-    res.status(503).json({
-      message: "Database unavailable",
+
+    return res.status(503).json({
+      message: "Database unavailable. Please try again later.",
     });
   }
 });
 
-// Create a short URL
-app.post("/api/shorturl", async (req, res) => {
-  try {
-    const { Originalurl } = req.body;
+// -------------------- CREATE SHORT URL --------------------
 
-    // Validate input
+app.post("/api/shorturl", createUrlLimiter, async (req, res) => {
+  try {
+    const { Originalurl } = req.body ?? {};
+
     if (
       typeof Originalurl !== "string" ||
       !Originalurl.trim()
     ) {
       return res.status(400).json({
+        message: "Originalurl is required",
+      });
+    }
+
+    let parsedUrl;
+
+    try {
+      parsedUrl = new URL(Originalurl.trim());
+    } catch {
+      return res.status(400).json({
         message: "Please provide a valid URL",
       });
     }
 
-    const trimmedUrl = Originalurl.trim();
-
-    // Validate URL format and protocol
-    let parsedUrl;
-
-    try {
-      parsedUrl = new URL(trimmedUrl);
-    } catch {
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
       return res.status(400).json({
-        message: "Invalid URL format",
+        message: "Only HTTP and HTTPS URLs are supported",
       });
     }
 
-    if (
-      !["http:", "https:"].includes(parsedUrl.protocol)
-    ) {
-      return res.status(400).json({
-        message: "Only HTTP and HTTPS URLs are allowed",
-      });
-    }
+    const originalUrl = parsedUrl.href;
 
-    const backendUrl = getBackendUrl();
-
-    // Generate a unique short ID
+    // Generate a unique short ID.
     let shortId;
-    let savedUrl;
+    let exists = true;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       shortId = nanoid(6);
+      exists = await Url.exists({ ShortId: shortId });
 
-      try {
-        savedUrl = await Url.create({
-          Originalurl: parsedUrl.toString(),
-          ShortId: shortId,
-        });
-
-        break;
-      } catch (error) {
-        // Retry only if the short ID already exists
-        if (error.code !== 11000) {
-          throw error;
-        }
-      }
+      if (!exists) break;
     }
 
-    if (!savedUrl) {
-      return res.status(500).json({
-        message: "Could not generate a unique short ID",
+    if (exists) {
+      return res.status(503).json({
+        message: "Could not generate a short URL. Please retry.",
       });
     }
+
+    const savedUrl = await Url.create({
+      Originalurl: originalUrl,
+      ShortId: shortId,
+    });
+
+    const Shorturl = `${getBackendUrl()}/${savedUrl.ShortId}`;
 
     return res.status(201).json({
-      Shorturl: `${backendUrl}/${savedUrl.ShortId}`,
+      message: "Short URL created successfully",
+      ShortId: savedUrl.ShortId,
+      Originalurl: savedUrl.Originalurl,
+      Shorturl,
+      Clickcount: savedUrl.Clickcount,
+      createdAt: savedUrl.createdAt,
     });
   } catch (error) {
-    console.error("Error creating short URL:", error);
+    console.error("Create URL error:", error.message);
 
     return res.status(500).json({
       message: "Failed to create short URL",
@@ -237,40 +671,47 @@ app.post("/api/shorturl", async (req, res) => {
   }
 });
 
-// short urls
-
-
+// -------------------- LIST SHORT URLS --------------------
 
 app.get("/api/shorturls", async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const page = Math.max(
+      1,
+      Number.parseInt(req.query.page, 10) || 1
+    );
+
     const limit = Math.min(
-      50,
-      Math.max(1, parseInt(req.query.limit, 10) || 10)
+      100,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 10)
     );
 
     const skip = (page - 1) * limit;
 
-    const [urls, totalUrls] = await Promise.all([
+    const [urls, total] = await Promise.all([
       Url.find()
-        .select("Originalurl ShortId Clickcount createdAt")
-        .sort({ createdAt: -1, _id: -1 })
+        .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
+        .limit(limit)
+        .lean(),
       Url.countDocuments(),
     ]);
 
+    const backendUrl = getBackendUrl();
+
     return res.status(200).json({
-      urls,
+      urls: urls.map((url) => ({
+        ...url,
+        Shorturl: `${backendUrl}/${url.ShortId}`,
+      })),
       pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(totalUrls / limit),
-        totalUrls,
+        page,
         limit,
+        total,
+        totalPages: Math.ceil(total / limit),
       },
     });
   } catch (error) {
-    console.error("Error fetching URLs:", error);
+    console.error("List URLs error:", error.message);
 
     return res.status(500).json({
       message: "Failed to fetch URLs",
@@ -278,9 +719,7 @@ app.get("/api/shorturls", async (req, res) => {
   }
 });
 
-
-//delete URL
-
+// -------------------- DELETE SHORT URL --------------------
 
 app.delete("/api/shorturl/:ShortId", async (req, res) => {
   try {
@@ -296,21 +735,18 @@ app.delete("/api/shorturl/:ShortId", async (req, res) => {
 
     return res.status(200).json({
       message: "Short URL deleted successfully",
-      deletedShortId: deletedUrl.ShortId,
+      ShortId,
     });
   } catch (error) {
-    console.error("Error deleting short URL:", error);
+    console.error("Delete URL error:", error.message);
 
     return res.status(500).json({
-      message: "Failed to delete short URL",
+      message: "Failed to delete URL",
     });
   }
 });
 
-
-
-// stat card
-
+// -------------------- OVERALL STATISTICS --------------------
 
 app.get("/api/shorturls/stats", async (req, res) => {
   try {
@@ -321,43 +757,31 @@ app.get("/api/shorturls/stats", async (req, res) => {
           $group: {
             _id: null,
             totalClicks: { $sum: "$Clickcount" },
-            averageClicks: { $avg: "$Clickcount" },
           },
         },
       ]),
     ]);
 
-    const stats = result[0] || {
-      totalClicks: 0,
-      averageClicks: 0,
-    };
-
     return res.status(200).json({
       totalUrls,
-      totalClicks: stats.totalClicks,
-      averageClicks: Number(
-        stats.averageClicks.toFixed(1)
-      ),
+      totalClicks: result[0]?.totalClicks ?? 0,
     });
   } catch (error) {
-    console.error("Error fetching URL statistics:", error);
+    console.error("Overall stats error:", error.message);
 
     return res.status(500).json({
-      message: "Failed to fetch URL statistics",
+      message: "Failed to fetch statistics",
     });
   }
 });
 
-
-// get stats
+// -------------------- SINGLE URL STATISTICS --------------------
 
 app.get("/api/shorturl/:ShortId/stats", async (req, res) => {
   try {
-    const { ShortId } = req.params;
-
-    const url = await Url.findOne({ ShortId }).select(
-      "Originalurl ShortId Clickcount createdAt"
-    );
+    const url = await Url.findOne({
+      ShortId: req.params.ShortId,
+    }).lean();
 
     if (!url) {
       return res.status(404).json({
@@ -366,13 +790,15 @@ app.get("/api/shorturl/:ShortId/stats", async (req, res) => {
     }
 
     return res.status(200).json({
-      Originalurl: url.Originalurl,
       ShortId: url.ShortId,
+      Originalurl: url.Originalurl,
+      Shorturl: `${getBackendUrl()}/${url.ShortId}`,
       Clickcount: url.Clickcount,
-      CreatedAt: url.createdAt,
+      createdAt: url.createdAt,
+      updatedAt: url.updatedAt,
     });
   } catch (error) {
-    console.error("Error fetching URL statistics:", error);
+    console.error("Single URL stats error:", error.message);
 
     return res.status(500).json({
       message: "Failed to fetch URL statistics",
@@ -380,25 +806,51 @@ app.get("/api/shorturl/:ShortId/stats", async (req, res) => {
   }
 });
 
-// Keep the catch-all redirect after every API route.
+// -------------------- REDIRECT --------------------
+
+// Keep this route after the more specific /api routes.
 app.get("/:ShortId", async (req, res) => {
   try {
-    const found = await Url.findOneAndUpdate(
+    const url = await Url.findOneAndUpdate(
       { ShortId: req.params.ShortId },
       { $inc: { Clickcount: 1 } },
-      { new: true },
+      { new: true }
     );
 
-    if (!found) {
+    if (!url) {
       return res.status(404).send("Short URL not found");
     }
 
-    return res.redirect(found.Originalurl);
+    return res.redirect(302, url.Originalurl);
   } catch (error) {
-    console.error("Error redirecting URL:", error);
+    console.error("Redirect error:", error.message);
 
-    return res.status(500).send("Internal server error");
+    return res.status(500).send("Unable to redirect right now");
   }
 });
 
+// -------------------- NOT FOUND --------------------
+
+app.use((req, res) => {
+  res.status(404).json({
+    message: "Route not found",
+  });
+});
+
+// -------------------- ERROR HANDLER --------------------
+
+app.use((error, req, res, next) => {
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  console.error("Request error:", error.message);
+
+  return res.status(500).json({
+    message: "Internal server error",
+  });
+});
+
+// Important: Vercel imports this app.
+// Do NOT call app.listen() in this file.
 export default app;
