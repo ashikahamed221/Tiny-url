@@ -1,13 +1,15 @@
-
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import axios from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import UrlHistory from "./components/UrlHistory";
+import "./App.css";
 
 const App = () => {
   const [url, setUrl] = useState("");
   const [shortUrl, setShortUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const handleClick = async (e) => {
     e.preventDefault();
@@ -25,15 +27,16 @@ const App = () => {
         "http://localhost:4000/api/shorturl",
         {
           Originalurl: url.trim(),
-        }
+        },
       );
 
       setShortUrl(response.data.Shorturl);
+      setRefreshToken((current) => current + 1);
       toast.success("Short URL created successfully!");
     } catch (error) {
       toast.error(
         error.response?.data?.message ||
-          "Failed to create short URL. Please try again."
+          "Failed to create short URL. Please try again.",
       );
     } finally {
       setLoading(false);
@@ -50,67 +53,127 @@ const App = () => {
   };
 
   return (
-    <div className="min-h-screen bg-white text-black flex items-center justify-center px-4">
-      <div className="w-full max-w-3xl text-center">
-        <h1 className="text-4xl md:text-5xl font-sans font-bold">
-          Tiny<span className="text-orange-500">URL</span>
-        </h1>
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="topbar-inner">
+          <Link className="brand" to="/">
+            <span className="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M10 13.5 14 9.5m-6.5 7H6a4 4 0 0 1 0-8h4m4 0h2a4 4 0 1 1 0 8h-4"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            TinyURL
+          </Link>
+          
+        </div>
+      </header>
 
-        <p className="mt-4 text-gray-600">
-          Turn long URLs into short links.
-        </p>
-
-        <form onSubmit={handleClick} className="mt-8">
-          <input
-            type="url"
-            className="w-full border p-3 rounded-xl focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-200"
-            placeholder="https://example.com"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            required
-          />
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="mt-4 bg-orange-500 px-4 py-3 text-white rounded-lg w-full font-semibold hover:bg-orange-600 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {loading ? "Creating..." : "Shorten URL"}
-          </button>
-        </form>
-
-        {shortUrl ? (
-          <div className="mt-8 border rounded-xl p-5">
-            <p className="text-gray-600 text-sm mb-3">
-              Your shortened link
-            </p>
-
-            <a
-              href={shortUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-orange-600 underline break-all"
-            >
-              {shortUrl}
-            </a>
-
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="mt-4 block w-full bg-gray-900 text-white py-2 rounded-lg hover:bg-gray-700"
-            >
-              Copy Link
-            </button>
-          </div>
-        ) : (
-          <p className="mt-6 text-gray-400 text-sm">
-            Your shortened link will appear here.
+      <main className="dashboard">
+        <div className="page-heading">
+          <p className="eyebrow">Your workspace</p>
+          <h1>Make every link count.</h1>
+          <p>
+            Create, share, and keep track of all your short links in one place.
           </p>
-        )}
-        <UrlHistory />
-      </div>
+        </div>
 
-      
+        <section className="create-card" aria-labelledby="create-link-title">
+          <div className="create-card-heading">
+            <span className="create-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 5v14m7-7H5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+            <div>
+              <h2 id="create-link-title">Create a short link</h2>
+              <p>Paste a long URL and we’ll make it easier to share.</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleClick} className="create-form">
+            <label className="url-input-wrap">
+              <svg
+                className="url-input-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M10 13.5 14 9.5m-6.5 7H6a4 4 0 0 1 0-8h4m4 0h2a4 4 0 1 1 0 8h-4"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <input
+                type="url"
+                className="url-input"
+                placeholder="https://your-very-long-link.com"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                aria-label="URL to shorten"
+                required
+              />
+            </label>
+            <button type="submit" disabled={loading} className="primary-button">
+              {loading ? (
+                "Creating..."
+              ) : (
+                <>
+                  Shorten URL
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M5 12h14m-6-6 6 6-6 6"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </>
+              )}
+            </button>
+          </form>
+          <p className="create-hint">Your link is ready to share in seconds.</p>
+
+          {shortUrl && (
+            <div className="result-card" role="status">
+              <div className="result-copy">
+                <span className="result-label">Your new short link</span>
+                <a
+                  href={shortUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="result-link"
+                >
+                  {shortUrl}
+                </a>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="result-copy-button"
+              >
+                Copy link
+              </button>
+            </div>
+          )}
+        </section>
+
+        <UrlHistory refreshToken={refreshToken} />
+      </main>
 
       <ToastContainer position="top-right" />
     </div>
