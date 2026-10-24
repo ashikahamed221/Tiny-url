@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
-
-const API_URL = "http://localhost:4000";
+import { API_URL } from "../config";
 
 const UrlHistory = ({ refreshToken }) => {
   const [urls, setUrls] = useState([]);

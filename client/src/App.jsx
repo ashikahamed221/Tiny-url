@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import axios from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import UrlHistory from "./components/UrlHistory";
+import { API_URL } from "./config";
 import "./App.css";
 
 const App = () => {
@@ -24,7 +25,7 @@ const App = () => {
 
     try {
       const response = await axios.post(
-        "http://localhost:4000/api/shorturl",
+        `${API_URL}/api/shorturl`,
         {
           Originalurl: url.trim(),
         },
