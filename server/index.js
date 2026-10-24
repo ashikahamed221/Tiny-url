@@ -310,6 +310,7 @@ app.get("/api/shorturl/:ShortId/stats", async (req, res) => {
 
 
 // Start server only after MongoDB connects
+
 const startServer = async () => {
   try {
     await mongoose.connect(MONGODB_URI);
