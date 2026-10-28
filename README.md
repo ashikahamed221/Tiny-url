@@ -2,7 +2,6 @@
 
 A full-stack URL shortener application that converts long URLs into short, shareable links. It also provides click tracking, URL history, and statistics.
 
-🌐 **Live Demo:** [Tiny URL](https://tiny-url-neon.vercel.app)
 
 ## 📸 About the Project
 
