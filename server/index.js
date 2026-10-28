@@ -418,32 +418,22 @@ app.set("trust proxy", 1);
 
 app.use(express.json({ limit: "10kb" }));
 
+
 // -------------------- CORS --------------------
 
-const allowedOrigins = new Set(
-  [
-    "http://localhost:5173",
-    process.env.CLIENT_URL?.trim(),
-  ]
-    .filter(Boolean)
-    .map((origin) => origin.replace(/\/+$/, ""))
+const allowedOrigins = [
+  "https://tiny-url-neon.vercel.app",
+  "http://localhost:5173",
+];
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 204,
+  })
 );
-
-const corsOptions = {
-  origin(origin, callback) {
-    // Allow requests without an Origin header (e.g. server-to-server).
-    if (!origin || allowedOrigins.has(origin.replace(/\/+$/, ""))) {
-      return callback(null, true);
-    }
-
-    return callback(new Error("Origin not allowed by CORS"));
-  },
-  methods: ["GET", "POST", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
-
-app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));
 
 // -------------------- RATE LIMITING --------------------
 
