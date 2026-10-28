@@ -147,7 +147,7 @@ For production deployment, configure the required environment variables in your 
 **Ashik Ahamed**
 
 - GitHub: [ashikahamed221](https://github.com/ashikahamed221)
-- LinkedIn: [Connect with me](https://in.linkedin.com/in/j-ashik-ahamed)
+- LinkedIn: [Connect with me](https://www.linkedin.com/in/ashikahamed05/)
 
 ---
 
